@@ -103,8 +103,8 @@ class WirelessDevicesTracker:
 		ip, name = get_lease_details(self.dnsmasq_leasefile, mac)
 		hostname = '%s.%s' % (name, self.dnsmasq_domain) if self.dnsmasq_domain else name
 		dev_id = name if name else mac.replace(':', '_')
-		if self.config['device_prefix']:
-			dev_id = '%s_%s' % (self.config['device_prefix'], dev_id)
+		if self.config['device_id_prefix']:
+			dev_id = '%s_%s' % (self.config['device_id_prefix'], dev_id)
 
 		url = '%s/api/services/device_tracker/see' % self.config['host']
 		headers = {'Authorization': 'Bearer %s' % self.config['token'], 'Content-Type': 'application/json'}
