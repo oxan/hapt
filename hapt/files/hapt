@@ -3,6 +3,7 @@
 # Dependencies: micropython, micropython-lib (for os module), curl (to make API call)
 
 import os
+import sys
 import ujson
 import uos
 import urequests
@@ -109,6 +110,7 @@ class WirelessDevicesTracker:
 		url = '%s/api/services/device_tracker/see' % self.config['host']
 		headers = {'Authorization': 'Bearer %s' % self.config['token'], 'Content-Type': 'application/json'}
 		message = {'mac': mac, 'dev_id': dev_id, 'host_name': hostname, 'source_type': 'router', 'consider_home': consider_home}
+		print("Calling Home Assistant for device %s (id %s, hostname %s) with home time of %d" % (mac, dev_id, hostname, consider_home))
 
 		curl_call(url, headers, ujson.dumps(message))
 
@@ -116,19 +118,22 @@ class WirelessDevicesTracker:
 		if mac not in self.clients:
 			self.clients[mac] = []
 		self.clients[mac].append(interface)
-		self.call_home_assistant(mac, self.config['consider_home_connect'])
+		print("Connect of %s on %s, now connected to: %s" % (mac, interface, self.clients[mac]))
+		self.call_home_assistant(mac, int(self.config['consider_home_connect']))
 
 	def on_disconnect(self, interface, mac):
 		self.clients[mac].remove(interface)
+		print("Disconnect of %s on %s, now connected to: %s" % (mac, interface, self.clients[mac]))
 		if len(self.clients[mac]) == 0:
-			self.call_home_assistant(mac, self.config['consider_home_disconnect'])
+			print("Final disconnect, notifying Home Assistant")
+			self.call_home_assistant(mac, int(self.config['consider_home_disconnect']))
 
-	def run(self):
-		# get currently connected clients
+	def oneshot(self):
 		for interface in self.interfaces:
 			for mac in get_connected_clients(interface):
 				self.on_connect(interface, mac)
 
+	def monitor(self):
 		# connect to hostapd
 		poll = uselect.poll()
 		socket_map = {}
@@ -136,6 +141,7 @@ class WirelessDevicesTracker:
 			socket = connect_hostapd_socket(interface)
 			socket_map[str(socket)] = interface
 			poll.register(socket, uselect.POLLIN)
+		print("Connected to hostapd on interfaces %s" % self.interfaces)
 
 		# monitor events
 		while True:
@@ -147,4 +153,5 @@ class WirelessDevicesTracker:
 				self.handle_message(interface, message.decode('ascii'))
 
 tracker = WirelessDevicesTracker()
-tracker.run()
+tracker.oneshot()
+tracker.monitor()
