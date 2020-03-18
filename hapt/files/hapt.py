@@ -102,14 +102,16 @@ class WirelessDevicesTracker:
 
 	def call_home_assistant(self, mac, consider_home):
 		ip, name = get_lease_details(self.dnsmasq_leasefile, mac)
-		hostname = '%s.%s' % (name, self.dnsmasq_domain) if self.dnsmasq_domain else name
+		hostname = '%s.%s' % (name, self.dnsmasq_domain) if self.dnsmasq_domain and name else name
 		dev_id = name if name else mac.replace(':', '_')
 		if 'device_id_prefix' in self.config:
 			dev_id = '%s_%s' % (self.config['device_id_prefix'], dev_id)
 
 		url = '%s/api/services/device_tracker/see' % self.config['host']
 		headers = {'Authorization': 'Bearer %s' % self.config['token'], 'Content-Type': 'application/json'}
-		message = {'mac': mac, 'dev_id': dev_id, 'host_name': hostname, 'source_type': 'router', 'consider_home': consider_home}
+		message = {'mac': mac, 'dev_id': dev_id, 'source_type': 'router', 'consider_home': consider_home}
+		if hostname:
+			message['host_name'] = hostname
 		print("Calling Home Assistant for device %s (id %s, hostname %s) with home time of %d" % (mac, dev_id, hostname, consider_home))
 
 		curl_call(url, headers, ujson.dumps(message))
