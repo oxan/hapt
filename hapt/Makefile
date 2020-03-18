@@ -35,7 +35,7 @@ endef
 
 define Package/hapt/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) ./files/hapt $(1)/usr/bin
+	$(INSTALL_BIN) ./files/hapt.py $(1)/usr/bin/hapt
 
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/hapt.init $(1)/etc/init.d/hapt
