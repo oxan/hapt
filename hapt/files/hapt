@@ -154,4 +154,5 @@ class WirelessDevicesTracker:
 
 tracker = WirelessDevicesTracker()
 tracker.oneshot()
-tracker.monitor()
+if len(sys.argv) > 1 and sys.argv[1] == "--monitor":
+	tracker.monitor()
