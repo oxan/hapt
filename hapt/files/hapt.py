@@ -1,8 +1,9 @@
 #!/usr/bin/micropython
 
-# Dependencies: micropython, micropython-lib (for os module), curl (to make API call)
+# Dependencies: micropython, micropython-lib (for os, signal module), curl (to make API call)
 
 import os
+import signal
 import sys
 import ujson
 import uos
@@ -70,6 +71,12 @@ def connect_hostapd_socket(interface):
 
 	return socket
 
+def disconnect_hostapd_socket(socket):
+	socket.send('DETACH')
+	response = socket.recv(1024)
+	if response != b'OK\n':
+		raise ValueError('Received invalid response on DETACH from hostapd: %s' % response)
+
 def get_lease_details(leasefile, mac):
 	try:
 		with open(leasefile, 'r') as handle:
@@ -86,6 +93,7 @@ def get_lease_details(leasefile, mac):
 class WirelessDevicesTracker:
 	def __init__(self):
 		self.clients = {}
+
 		self.config = get_config('hapt', 'hapt')
 		self.interfaces = [x for x in get_wireless_interfaces()
 		                   if 'wifi_interfaces' not in self.config or x in self.config['wifi_interfaces']]
@@ -139,23 +147,41 @@ class WirelessDevicesTracker:
 	def monitor(self):
 		# connect to hostapd
 		poll = uselect.poll()
-		socket_map = {}
+		sockets = {}
 		for interface in self.interfaces:
 			socket = connect_hostapd_socket(interface)
-			socket_map[str(socket)] = interface
+			sockets[socket.fileno()] = (interface, socket)
 			poll.register(socket, uselect.POLLIN)
 		print("Connected to hostapd on interfaces %s" % self.interfaces)
 
 		# monitor events
 		while True:
-			available = poll.poll()
-			for socket, event in available:
-				# TODO handle errors
-				message = socket.recv(1024)
-				interface = socket_map[str(socket)]
-				self.handle_message(interface, message.decode('ascii'))
+			try:
+				available = poll.poll()
+				for socket, event in available:
+					if event & uselect.POLLHUP or event & uselect.POLLERR:
+						print("Poll returned error for socket on interface %s, quitting" % sockets[socket.fileno()][0])
+						break
 
-tracker = WirelessDevicesTracker()
-tracker.oneshot()
-if len(sys.argv) > 1 and sys.argv[1] == "--monitor":
-	tracker.monitor()
+					message = socket.recv(1024)
+					interface, _ = sockets[socket.fileno()]
+					self.handle_message(interface, message.decode('ascii'))
+			except Exception as e:
+				print("Poll event loop encountered %s (%s), quitting" % (type(e), e))
+				break
+
+		# disconnect from hostapd
+		for _, socket in sockets.values():
+			disconnect_hostapd_socket(socket)
+
+	def exit(self, signum):
+		# the signal will cause poll() to raise OSError(EINTR), which in turn breaks from the monitor loop
+		pass
+
+if __name__ == "__main__":
+	tracker = WirelessDevicesTracker()
+	signal.signal(signal.SIGINT, tracker.exit)
+
+	tracker.oneshot()
+	if len(sys.argv) > 1 and sys.argv[1] == "--monitor":
+		tracker.monitor()
