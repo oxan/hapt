@@ -85,9 +85,10 @@ def get_lease_details(leasefile, mac):
 
 class WirelessDevicesTracker:
 	def __init__(self):
-		self.config = get_config('hapt', 'hapt')
-		self.interfaces = get_wireless_interfaces()
 		self.clients = {}
+		self.config = get_config('hapt', 'hapt')
+		self.interfaces = [x for x in get_wireless_interfaces()
+		                   if 'wifi_interfaces' not in self.config or x in self.config['wifi_interfaces']]
 
 		dnsmasq_config = get_config('dhcp', 'dnsmasq')
 		self.dnsmasq_leasefile = dnsmasq_config['leasefile'] if 'leasefile' in dnsmasq_config else '/tmp/dhcp.leases'
