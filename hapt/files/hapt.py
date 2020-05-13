@@ -1,6 +1,6 @@
 #!/usr/bin/micropython
 
-# Dependencies: micropython, micropython-lib (for os, signal module), curl (to make API call)
+# Dependencies: micropython, micropython-lib (for os, signal module), curl (to make API calls)
 
 import ffi
 import os
@@ -14,15 +14,33 @@ import usocket
 import ustruct
 import utime
 
+### Low-level wrappers around the OS interface
 class FFI:
-	libc = ffi.open("libc.so.6")
+	libc = ffi.open('libc.so.6')
 
 	IN_CREATE = 0x00000100
 	IN_DELETE = 0x00000200
 
-	inotify_init = libc.func("i", "inotify_init", "")
-	inotify_add_watch = libc.func("i", "inotify_add_watch", "isI")
-	inotify_rm_watch = libc.func("i", "inotify_rm_watch", "ii")
+	inotify_init = libc.func('i', 'inotify_init', '')
+	inotify_add_watch = libc.func('i', 'inotify_add_watch', 'isI')
+	inotify_rm_watch = libc.func('i', 'inotify_rm_watch', 'ii')
+
+def decode_inotify_event(event):
+	# struct inotify_event as defined in inotify(7).
+	wd, mask, cookie, length = ustruct.unpack('iIII', event)
+	name = event[ustruct.calcsize('iIII'):].split(b'\0', 1)[0].decode('utf-8')
+	return wd, mask, name
+
+def encode_socket_address(path):
+	# The socket.bind() functions takes struct sockaddr_un as parameter, which is defined by (see unix(7)):
+	# struct sockaddr_un {
+	#    sa_family_t sun_family;    // sa_family_t is an unsigned short
+	#    char        sun_path[108];
+	# };
+	return ustruct.pack('H108s', usocket.AF_UNIX, path)
+
+def listdir(path):
+	return [item[0] for item in uos.ilistdir(path) if item[0] not in ('.', '..')]
 
 def subprocess(command):
 	with os.popen(command, 'r') as stream:
@@ -30,8 +48,9 @@ def subprocess(command):
 	os.waitpid(-1, None)
 	return result
 
+### OpenWRT interface
 def ubus_call(path, method, message=None):
-	# it might be cleaner to use libubus and FFI
+	# it might be cleaner to use libubus and FFI, but that seems quite complicated
 	if message is not None:
 		command = "ubus call %s %s '%s'" % (path, method, ujson.dumps(message))
 	else:
@@ -53,14 +72,6 @@ def get_connected_clients(interface):
 	response = ubus_call('hostapd.%s' % interface, 'get_clients')
 	return response['clients'].keys()
 
-def encode_socket_address(path):
-	# The socket.bind() functions takes struct sockaddr_un as parameter, which is defined by (see unix(7)):
-	# struct sockaddr_un {
-	#    sa_family_t sun_family;    // sa_family_t is an unsigned short
-	#    char        sun_path[108];
-	# };
-	return ustruct.pack('H108s', usocket.AF_UNIX, path)
-
 def connect_hostapd_socket(interface):
 	remote_address = '/var/run/hostapd/%s' % interface
 	local_address  = '/var/run/hapt-%s-%d' % (interface, utime.time() % 86400)
@@ -81,11 +92,6 @@ def disconnect_hostapd_socket(socket):
 		raise ValueError('Received invalid response on DETACH from hostapd: %s' % response)
 	socket.close()
 
-def decode_inotify_event(event):
-	wd, mask, cookie, length = ustruct.unpack("iIII", event)
-	name = event[ustruct.calcsize("iIII"):].split(b'\0', 1)[0].decode('utf-8')
-	return wd, mask, name
-
 def get_lease_details(leasefile, mac):
 	try:
 		with open(leasefile, 'r') as handle:
@@ -99,10 +105,8 @@ def get_lease_details(leasefile, mac):
 
 	return None, None
 
-def listdir(path):
-	return [item[0] for item in uos.ilistdir(path) if item[0] not in (".", "..")]
 
-
+### Low-level interface monitor
 class InterfaceWatcher:
 	def __init__(self, handler, include_interfaces=None):
 		self.handler = handler
@@ -177,7 +181,7 @@ class InterfaceWatcher:
 					elif fd_type == 'inotify':
 						self.handle_inotify(os.read(fd, 256))
 		except Exception as e:
-			print("Poll event loop encountered following exception, quitting")
+			print("Event loop encountered following exception, quitting")
 			sys.print_exception(e)
 
 	def teardown(self):
@@ -186,6 +190,7 @@ class InterfaceWatcher:
 				self.remove_interface_fd(fd)
 
 
+### High-level device tracker
 class WirelessDevicesTracker:
 	def __init__(self):
 		self.config = get_config('hapt', 'hapt')
@@ -249,10 +254,10 @@ class WirelessDevicesTracker:
 		# the signal will cause poll() to raise OSError(EINTR), which in turn returns from watcher.run()
 		pass
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	tracker = WirelessDevicesTracker()
 	signal.signal(signal.SIGINT, tracker.exit)
 
 	tracker.oneshot()
-	if len(sys.argv) > 1 and sys.argv[1] == "--monitor":
+	if len(sys.argv) > 1 and sys.argv[1] == '--monitor':
 		tracker.monitor()
