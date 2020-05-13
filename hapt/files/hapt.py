@@ -2,6 +2,7 @@
 
 # Dependencies: micropython, micropython-lib (for os, signal module), curl (to make API call)
 
+import ffi
 import os
 import signal
 import sys
@@ -12,6 +13,15 @@ import uselect
 import usocket
 import ustruct
 import utime
+
+class FFI:
+	libc = ffi.open("libc.so.6")
+
+	IN_CREATE = 0x00000100
+	IN_DELETE = 0x00000200
+
+	inotify_init = libc.func("i", "inotify_init", "")
+	inotify_add_watch = libc.func("i", "inotify_add_watch", "isI")
 
 def subprocess(command):
 	with os.popen(command, 'r') as stream:
@@ -33,14 +43,6 @@ def curl_call(path, headers, payload):
 	for key, value in headers.items():
 		command += "-H '%s: %s' " % (key, value)
 	return subprocess(command)
-
-def get_wireless_interfaces():
-	network_status = ubus_call('network.wireless', 'status')
-	interfaces = []
-	for _, radio in network_status.items():
-		for interface in radio['interfaces']:
-			interfaces.append(interface['ifname'])
-	return interfaces
 
 def get_config(config, section):
 	config = ubus_call('uci', 'get', {'config': config, 'type': section})
@@ -76,6 +78,17 @@ def disconnect_hostapd_socket(socket):
 	response = socket.recv(1024)
 	if response != b'OK\n':
 		raise ValueError('Received invalid response on DETACH from hostapd: %s' % response)
+	socket.close()
+
+def create_directory_watch(directory):
+	fd = FFI.inotify_init()
+	wd = FFI.inotify_add_watch(fd, directory, FFI.IN_CREATE | FFI.IN_DELETE)
+	return fd
+
+def decode_inotify_event(event):
+	wd, mask, cookie, length = ustruct.unpack("iIII", event)
+	name = event[ustruct.calcsize("iIII"):].split(b'\0', 1)[0].decode('utf-8')
+	return mask, name
 
 def get_lease_details(leasefile, mac):
 	try:
@@ -90,24 +103,95 @@ def get_lease_details(leasefile, mac):
 
 	return None, None
 
+def listdir(path):
+	return [item[0] for item in uos.ilistdir(path) if item[0] not in (".", "..")]
+
+
+class InterfaceWatcher:
+	def __init__(self, handler, include_interfaces=None):
+		self.fds  = {}
+		self.poll = uselect.poll()
+		self.handler = handler
+		self.include_interfaces = include_interfaces
+
+	def add_interface(self, interface):
+		if self.include_interfaces and interface not in self.include_interfaces:
+			return
+
+		socket = connect_hostapd_socket(interface)
+		print("Connected to hostapd on interface %s" % interface)
+		self.fds[socket.fileno()] = ('hostapd', interface, socket)
+		self.poll.register(socket.fileno(), uselect.POLLIN)
+
+	def remove_interface(self, interface):
+		for fd, desc in self.fds.items():
+			if desc[0] == 'hostapd' and desc[1] == interface:
+				self.remove_interface_fd(fd)
+
+	def remove_interface_fd(self, fd):
+		try:
+			disconnect_hostapd_socket(self.fds[fd][2])
+			print("Disconnected from hostapd interface %s" % self.fds[fd][1])
+		except Exception as e:
+			print("Failed to disconnect from hostapd on interface %s due to %s (%s)" % (self.fds[fd][1], type(e), e))
+		self.poll.unregister(fd)
+		del self.fds[fd]
+
+	def setup(self):
+		try:
+			uos.stat('/var/run/hostapd')
+		except OSError as e:
+			uos.mkdir('/var/run/hostapd')
+
+		inotify_fd = create_directory_watch('/var/run/hostapd')
+		self.fds[inotify_fd] = ('inotify', None, None)
+		self.poll.register(inotify_fd, uselect.POLLIN)
+
+		for interface in listdir('/var/run/hostapd'):
+			self.add_interface(interface)
+
+	def run(self):
+		print("Monitoring for hostapd events...")
+		while True:
+			try:
+				for fd, event in self.poll.poll():
+					if fd not in self.fds:
+						continue
+
+					fd_type, fd_name, fd_obj = self.fds[fd]
+					if event & (uselect.POLLHUP | uselect.POLLERR):
+						print("Poll returned error for file descriptor %d (%s/%s), removing" % (fd, fd_type, fd_name))
+						self.remove_interface_fd(fd)
+
+					if fd_type == 'hostapd':
+						msg = fd_obj.recv(1024)
+						self.handler(fd_name, msg.decode('utf-8'))
+					elif fd_type == 'inotify':
+						msg = os.read(fd, 256)
+						event, interface = decode_inotify_event(msg)
+						if event == FFI.IN_CREATE:
+							self.add_interface(interface)
+						elif event == FFI.IN_DELETE:
+							self.remove_interface(interface)
+			except Exception as e:
+				print("Poll event loop encountered following exception, quitting")
+				sys.print_exception(e)
+				break
+
+	def teardown(self):
+		for fd, desc in self.fds.items():
+			if desc[0] == 'hostapd':
+				self.remove_interface_fd(fd)
+
+
 class WirelessDevicesTracker:
 	def __init__(self):
-		self.clients = {}
-
 		self.config = get_config('hapt', 'hapt')
-		self.interfaces = [x for x in get_wireless_interfaces()
-		                   if 'wifi_interfaces' not in self.config or x in self.config['wifi_interfaces']]
+		self.clients = {}
 
 		dnsmasq_config = get_config('dhcp', 'dnsmasq')
 		self.dnsmasq_leasefile = dnsmasq_config['leasefile'] if 'leasefile' in dnsmasq_config else '/tmp/dhcp.leases'
 		self.dnsmasq_domain = dnsmasq_config['domain'] if 'domain' in dnsmasq_config else None
-
-	def handle_message(self, interface, message):
-		components = message[message.find('>')+1:].split(' ')
-		if components[0] == 'AP-STA-CONNECTED':
-			self.on_connect(interface, components[1])
-		elif components[0] == 'AP-STA-DISCONNECTED':
-			self.on_disconnect(interface, components[1])
 
 	def call_home_assistant(self, mac, consider_home):
 		ip, name = get_lease_details(self.dnsmasq_leasefile, mac)
@@ -125,11 +209,18 @@ class WirelessDevicesTracker:
 
 		curl_call(url, headers, ujson.dumps(message))
 
+	def handle_message(self, interface, message):
+		components = message[message.find('>')+1:].split(' ')
+		if components[0] == 'AP-STA-CONNECTED':
+			self.on_connect(interface, components[1])
+		elif components[0] == 'AP-STA-DISCONNECTED':
+			self.on_disconnect(interface, components[1])
+
 	def on_connect(self, interface, mac):
 		if mac not in self.clients:
 			self.clients[mac] = []
 		self.clients[mac].append(interface)
-		print("Connect of %s on %s, now connected to: %s" % (mac, interface, self.clients[mac]))
+		print("Connect of %s on %s, now connected to: %s" % (mac, interface, ", ".join(self.clients[mac])))
 		self.call_home_assistant(mac, int(self.config['consider_home_connect']))
 
 	def on_disconnect(self, interface, mac):
@@ -140,42 +231,20 @@ class WirelessDevicesTracker:
 			self.call_home_assistant(mac, int(self.config['consider_home_disconnect']))
 
 	def oneshot(self):
-		for interface in self.interfaces:
-			for mac in get_connected_clients(interface):
-				self.on_connect(interface, mac)
+		configured_interfaces = self.config.get('wifi_interfaces', None)
+		for interface in listdir('/var/run/hostapd'):
+			if not configured_interfaces or interface in configured_interfaces:
+				for mac in get_connected_clients(interface):
+					self.on_connect(interface, mac)
 
 	def monitor(self):
-		# connect to hostapd
-		poll = uselect.poll()
-		sockets = {}
-		for interface in self.interfaces:
-			socket = connect_hostapd_socket(interface)
-			sockets[socket.fileno()] = (interface, socket)
-			poll.register(socket, uselect.POLLIN)
-		print("Connected to hostapd on interfaces %s" % self.interfaces)
-
-		# monitor events
-		while True:
-			try:
-				available = poll.poll()
-				for socket, event in available:
-					if event & uselect.POLLHUP or event & uselect.POLLERR:
-						print("Poll returned error for socket on interface %s, quitting" % sockets[socket.fileno()][0])
-						break
-
-					message = socket.recv(1024)
-					interface, _ = sockets[socket.fileno()]
-					self.handle_message(interface, message.decode('ascii'))
-			except Exception as e:
-				print("Poll event loop encountered %s (%s), quitting" % (type(e), e))
-				break
-
-		# disconnect from hostapd
-		for _, socket in sockets.values():
-			disconnect_hostapd_socket(socket)
+		watcher = InterfaceWatcher(self.handle_message, self.config.get('wifi_interfaces', None))
+		watcher.setup()
+		watcher.run()
+		watcher.teardown()
 
 	def exit(self, signum):
-		# the signal will cause poll() to raise OSError(EINTR), which in turn breaks from the monitor loop
+		# the signal will cause poll() to raise OSError(EINTR), which in turn returns from watcher.run()
 		pass
 
 if __name__ == "__main__":
