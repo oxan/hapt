@@ -22,6 +22,7 @@ class FFI:
 
 	inotify_init = libc.func("i", "inotify_init", "")
 	inotify_add_watch = libc.func("i", "inotify_add_watch", "isI")
+	inotify_rm_watch = libc.func("i", "inotify_rm_watch", "ii")
 
 def subprocess(command):
 	with os.popen(command, 'r') as stream:
@@ -80,15 +81,10 @@ def disconnect_hostapd_socket(socket):
 		raise ValueError('Received invalid response on DETACH from hostapd: %s' % response)
 	socket.close()
 
-def create_directory_watch(directory):
-	fd = FFI.inotify_init()
-	wd = FFI.inotify_add_watch(fd, directory, FFI.IN_CREATE | FFI.IN_DELETE)
-	return fd
-
 def decode_inotify_event(event):
 	wd, mask, cookie, length = ustruct.unpack("iIII", event)
 	name = event[ustruct.calcsize("iIII"):].split(b'\0', 1)[0].decode('utf-8')
-	return mask, name
+	return wd, mask, name
 
 def get_lease_details(leasefile, mac):
 	try:
@@ -109,10 +105,11 @@ def listdir(path):
 
 class InterfaceWatcher:
 	def __init__(self, handler, include_interfaces=None):
-		self.fds  = {}
-		self.poll = uselect.poll()
 		self.handler = handler
 		self.include_interfaces = include_interfaces
+
+		self.fds  = {}
+		self.poll = uselect.poll()
 
 	def add_interface(self, interface):
 		if self.include_interfaces and interface not in self.include_interfaces:
@@ -137,23 +134,35 @@ class InterfaceWatcher:
 		self.poll.unregister(fd)
 		del self.fds[fd]
 
-	def setup(self):
-		try:
-			uos.stat('/var/run/hostapd')
-		except OSError as e:
-			uos.mkdir('/var/run/hostapd')
 
-		inotify_fd = create_directory_watch('/var/run/hostapd')
-		self.fds[inotify_fd] = ('inotify', None, None)
-		self.poll.register(inotify_fd, uselect.POLLIN)
+	def handle_inotify(self, msg):
+		wd, mask, name = decode_inotify_event(msg)
+		if wd == self.inotify_wd_parent and name == 'hostapd':
+			if mask & FFI.IN_CREATE:
+				self.inotify_wd_control = FFI.inotify_add_watch(self.inotify_fd, '/var/run/hostapd', FFI.IN_CREATE | FFI.IN_DELETE)
+			if mask & FFI.IN_DELETE:
+				FFI.inotify_rm_watch(self.inotify_fd, self.inotify_wd_control)
+		elif wd == self.inotify_wd_control:
+			if mask & FFI.IN_CREATE:
+				self.add_interface(name)
+			if mask & FFI.IN_DELETE:
+				self.remove_interface(name)
+
+	def setup(self):
+		self.inotify_fd = FFI.inotify_init()
+		self.inotify_wd_parent = FFI.inotify_add_watch(self.inotify_fd, '/var/run', FFI.IN_CREATE | FFI.IN_DELETE)
+		self.inotify_wd_control = FFI.inotify_add_watch(self.inotify_fd, '/var/run/hostapd', FFI.IN_CREATE | FFI.IN_DELETE)
+
+		self.fds[self.inotify_fd] = ('inotify', None, None)
+		self.poll.register(self.inotify_fd, uselect.POLLIN)
 
 		for interface in listdir('/var/run/hostapd'):
 			self.add_interface(interface)
 
 	def run(self):
-		print("Monitoring for hostapd events...")
-		while True:
-			try:
+		print("Monitoring for events...")
+		try:
+			while True:
 				for fd, event in self.poll.poll():
 					if fd not in self.fds:
 						continue
@@ -164,19 +173,12 @@ class InterfaceWatcher:
 						self.remove_interface_fd(fd)
 
 					if fd_type == 'hostapd':
-						msg = fd_obj.recv(1024)
-						self.handler(fd_name, msg.decode('utf-8'))
+						self.handler(fd_name, fd_obj.recv(1024).decode('utf-8'))
 					elif fd_type == 'inotify':
-						msg = os.read(fd, 256)
-						event, interface = decode_inotify_event(msg)
-						if event == FFI.IN_CREATE:
-							self.add_interface(interface)
-						elif event == FFI.IN_DELETE:
-							self.remove_interface(interface)
-			except Exception as e:
-				print("Poll event loop encountered following exception, quitting")
-				sys.print_exception(e)
-				break
+						self.handle_inotify(os.read(fd, 256))
+		except Exception as e:
+			print("Poll event loop encountered following exception, quitting")
+			sys.print_exception(e)
 
 	def teardown(self):
 		for fd, desc in self.fds.items():
