@@ -225,14 +225,14 @@ class WirelessDevicesTracker:
 
 	def on_connect(self, interface, mac):
 		if mac not in self.clients:
-			self.clients[mac] = []
-		self.clients[mac].append(interface)
+			self.clients[mac] = set()
+		self.clients[mac].add(interface)
 		print("Connect of %s on %s, now connected to: %s" % (mac, interface, ", ".join(self.clients[mac])))
 		self.call_home_assistant(mac, int(self.config['consider_home_connect']))
 
 	def on_disconnect(self, interface, mac):
 		self.clients[mac].remove(interface)
-		print("Disconnect of %s on %s, now connected to: %s" % (mac, interface, self.clients[mac]))
+		print("Disconnect of %s on %s, now connected to: %s" % (mac, interface, ", ".join(self.clients[mac])))
 		if len(self.clients[mac]) == 0:
 			print("Final disconnect, notifying Home Assistant")
 			self.call_home_assistant(mac, int(self.config['consider_home_disconnect']))
