@@ -31,6 +31,9 @@ here.
 With the `wifi_interfaces` option, it is possible to specify the wireless interfaces that must be monitored. This can be
 used (for example) to ignore devices on a guest network.
 
+By listing MAC addresses in the `track_mac_address` option, it is possible to whitelist MAC addresses which are tracked.
+This prevents uninteresting devices from being synchronized with Home Assistant and cluttering the entity registry.
+
 ### Running
 After modifying the configuration, you must restart the service by `service hapt restart`. This can also be done from
 the LuCi interface (System > Startup). HAPT prints log messages to the system log, so that you can verify it is working

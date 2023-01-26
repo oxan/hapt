@@ -239,10 +239,15 @@ class WirelessDevicesTracker:
 
 	def oneshot(self):
 		configured_interfaces = self.config.get('wifi_interfaces', None)
+		configured_macs = self.config.get('track_mac_address', None)
 		for interface in listdir('/var/run/hostapd'):
-			if not configured_interfaces or interface in configured_interfaces:
-				for mac in get_connected_clients(interface):
-					self.on_connect(interface, mac)
+			if configured_interfaces and interface not in configured_interfaces:
+				continue
+
+			for mac in get_connected_clients(interface):
+				if configured_macs and mac not in configured_macs:
+					continue
+				self.on_connect(interface, mac)
 
 	def monitor(self):
 		watcher = InterfaceWatcher(self.handle_message, self.config.get('wifi_interfaces', None))
