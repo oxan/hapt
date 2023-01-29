@@ -224,6 +224,8 @@ class WirelessDevicesTracker:
 			self.on_disconnect(interface, components[1])
 
 	def on_connect(self, interface, mac):
+		if 'track_mac_address' in self.config and mac not in self.config['track_mac_address']:
+			return
 		if mac not in self.clients:
 			self.clients[mac] = set()
 		self.clients[mac].add(interface)
@@ -231,6 +233,8 @@ class WirelessDevicesTracker:
 		self.call_home_assistant(mac, int(self.config['consider_home_connect']))
 
 	def on_disconnect(self, interface, mac):
+		if 'track_mac_address' in self.config and mac not in self.config['track_mac_address']:
+			return
 		self.clients[mac].remove(interface)
 		print("Disconnect of %s on %s, now connected to: %s" % (mac, interface, ", ".join(self.clients[mac])))
 		if len(self.clients[mac]) == 0:
