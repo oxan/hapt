@@ -21,7 +21,7 @@ define Package/hapt/description
 endef
 
 define Package/hapt/conffiles
-	/etc/config/hapt
+/etc/config/hapt
 endef
 
 define Build/Prepare
