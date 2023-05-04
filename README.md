@@ -22,7 +22,7 @@ Once the package is installed, you must update the configuration in `/etc/config
 should be set to the address of your Home Assistant installation, and the `token` option to a Home Assistant
 [long-lived access token][token] (these can be generated in the Home Assistant web interface).
 
-The `consider_home_timeout` and `consider_home_disconnect` settings can be used to configure for how long (in seconds)
+The `consider_home_connect` and `consider_home_disconnect` settings can be used to configure for how long (in seconds)
 after the first association and last disassociation event the device should be considered home. Since Home Assistant
 does not support marking a device as away (on disconnects), this is implemented by marking the device as home for a
 negligible amount of time, after which Home Assistant will mark the device as away. The default values should be fine
