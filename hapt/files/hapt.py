@@ -8,7 +8,6 @@ import signal
 import sys
 import ujson
 import uos
-import urequests
 import uselect
 import usocket
 import ustruct
