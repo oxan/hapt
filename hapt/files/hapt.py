@@ -1,17 +1,20 @@
 #!/usr/bin/micropython
 
-# Dependencies: micropython, micropython-lib (for os, signal module), curl (to make API calls)
+# Dependencies: micropython, micropython-lib-unix (for os, signal module), curl (to make API calls)
+
+# micropython-lib-unix installs its modules into a unix subfolder, but the modules expect to be able to find
+import sys
+sys.path.append('/usr/lib/micropython/unix')
 
 import ffi
-import os
-import signal
-import sys
 import ujson
 import uos
 import uselect
 import usocket
 import ustruct
 import utime
+from unix import signal
+from unix import os
 
 ### Low-level wrappers around the OS interface
 class FFI:
