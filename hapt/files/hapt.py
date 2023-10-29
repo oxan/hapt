@@ -7,12 +7,11 @@ import sys
 sys.path.append('/usr/lib/micropython/unix')
 
 import ffi
-import ujson
-import uos
-import uselect
-import usocket
-import ustruct
-import utime
+import json
+import select
+import socket
+import struct
+import time
 from unix import signal
 from unix import os
 
@@ -29,8 +28,8 @@ class FFI:
 
 def decode_inotify_event(event):
 	# struct inotify_event as defined in inotify(7).
-	wd, mask, cookie, length = ustruct.unpack('iIII', event)
-	name = event[ustruct.calcsize('iIII'):].split(b'\0', 1)[0].decode('utf-8')
+	wd, mask, cookie, length = struct.unpack('iIII', event)
+	name = event[struct.calcsize('iIII'):].split(b'\0', 1)[0].decode('utf-8')
 	return wd, mask, name
 
 def encode_socket_address(path):
@@ -39,10 +38,10 @@ def encode_socket_address(path):
 	#    sa_family_t sun_family;    // sa_family_t is an unsigned short
 	#    char        sun_path[108];
 	# };
-	return ustruct.pack('H108s', usocket.AF_UNIX, path)
+	return struct.pack('H108s', socket.AF_UNIX, path)
 
 def listdir(path):
-	return [item[0] for item in uos.ilistdir(path) if item[0] not in ('.', '..')]
+	return [item[0] for item in os.ilistdir(path) if item[0] not in ('.', '..')]
 
 def subprocess(command):
 	with os.popen(command, 'r') as stream:
@@ -54,10 +53,10 @@ def subprocess(command):
 def ubus_call(path, method, message=None):
 	# it might be cleaner to use libubus and FFI, but that seems quite complicated
 	if message is not None:
-		command = "ubus call %s %s '%s'" % (path, method, ujson.dumps(message))
+		command = "ubus call %s %s '%s'" % (path, method, json.dumps(message))
 	else:
 		command = "ubus call %s %s" % (path, method)
-	return ujson.loads(subprocess(command))
+	return json.loads(subprocess(command))
 
 def curl_call(path, headers, payload):
 	# ussl borks on my SSL certificate
@@ -76,8 +75,8 @@ def get_connected_clients(interface):
 
 def connect_hostapd_socket(interface):
 	remote_address = '/var/run/hostapd/%s' % interface
-	local_address  = '/var/run/hapt-%s-%d' % (interface, utime.time() % 86400)
-	socket = usocket.socket(usocket.AF_UNIX, usocket.SOCK_DGRAM)
+	local_address  = '/var/run/hapt-%s-%d' % (interface, time.time() % 86400)
+	socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 	socket.bind(encode_socket_address(local_address))
 	socket.connect(encode_socket_address(remote_address))
 	socket.send('ATTACH')
@@ -115,7 +114,7 @@ class InterfaceWatcher:
 		self.include_interfaces = include_interfaces
 
 		self.fds  = {}
-		self.poll = uselect.poll()
+		self.poll = select.poll()
 
 	def add_interface(self, interface):
 		if self.include_interfaces and interface not in self.include_interfaces:
@@ -124,7 +123,7 @@ class InterfaceWatcher:
 		socket = connect_hostapd_socket(interface)
 		print("Connected to hostapd on interface %s" % interface)
 		self.fds[socket.fileno()] = ('hostapd', interface, socket)
-		self.poll.register(socket.fileno(), uselect.POLLIN)
+		self.poll.register(socket.fileno(), select.POLLIN)
 
 	def remove_interface(self, interface):
 		for fd, desc in self.fds.items():
@@ -160,7 +159,7 @@ class InterfaceWatcher:
 		self.inotify_wd_control = FFI.inotify_add_watch(self.inotify_fd, '/var/run/hostapd', FFI.IN_CREATE | FFI.IN_DELETE)
 
 		self.fds[self.inotify_fd] = ('inotify', None, None)
-		self.poll.register(self.inotify_fd, uselect.POLLIN)
+		self.poll.register(self.inotify_fd, select.POLLIN)
 
 		for interface in listdir('/var/run/hostapd'):
 			self.add_interface(interface)
@@ -174,7 +173,7 @@ class InterfaceWatcher:
 						continue
 
 					fd_type, fd_name, fd_obj = self.fds[fd]
-					if event & (uselect.POLLHUP | uselect.POLLERR):
+					if event & (select.POLLHUP | select.POLLERR):
 						print("Poll returned error for file descriptor %d (%s/%s), removing" % (fd, fd_type, fd_name))
 						self.remove_interface_fd(fd)
 
@@ -216,7 +215,7 @@ class WirelessDevicesTracker:
 			message['host_name'] = hostname
 		print("Calling Home Assistant for device %s (id %s, hostname %s) with home time of %d" % (mac, dev_id, hostname, consider_home))
 
-		curl_call(url, headers, ujson.dumps(message))
+		curl_call(url, headers, json.dumps(message))
 
 	def handle_message(self, interface, message):
 		components = message[message.find('>')+1:].split(' ')
