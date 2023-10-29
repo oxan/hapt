@@ -1,6 +1,6 @@
 #!/usr/bin/micropython
 
-# Dependencies: micropython, micropython-lib (for requests module), micropython-lib-unix (for os, signal module)
+# Dependencies: micropython, micropython-lib (for requests module), micropython-lib-unix or micropython-lib-unix-src (for os, signal module)
 
 # micropython-lib-unix installs its modules into a unix subfolder, but the modules expect to be able to find
 import sys
