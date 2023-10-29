@@ -17,7 +17,7 @@ define Package/hapt
 endef
 
 define Package/hapt/description
-	Home Assitant Presence Tracker (hapt) tracks the presence of wireless devices on your network and synchronizes with Home Assistant.
+	Home Assistant Presence Tracker (hapt) tracks the presence of wireless devices on your network and synchronizes with Home Assistant.
 endef
 
 define Package/hapt/conffiles
