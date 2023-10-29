@@ -1,6 +1,6 @@
 #!/usr/bin/micropython
 
-# Dependencies: micropython, micropython-lib-unix (for os, signal module), curl (to make API calls)
+# Dependencies: micropython, micropython-lib (for requests module), micropython-lib-unix (for os, signal module)
 
 # micropython-lib-unix installs its modules into a unix subfolder, but the modules expect to be able to find
 import sys
@@ -12,6 +12,7 @@ import select
 import socket
 import struct
 import time
+import urequests as requests  # not yet stripped of its u prefix in OpenWRT's micropython-lib version
 from unix import signal
 from unix import os
 
@@ -215,7 +216,9 @@ class WirelessDevicesTracker:
 			message['host_name'] = hostname
 		print("Calling Home Assistant for device %s (id %s, hostname %s) with home time of %d" % (mac, dev_id, hostname, consider_home))
 
-		curl_call(url, headers, json.dumps(message))
+		r = requests.post(url, headers=headers, data=json.dumps(message))
+		if r.status_code != 200:
+			print("Calling Home Assistant failed with status code %d and response '%s'" % (r.status_code, r.text))
 
 	def handle_message(self, interface, message):
 		components = message[message.find('>')+1:].split(' ')
