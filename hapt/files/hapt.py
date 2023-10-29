@@ -20,6 +20,8 @@ from unix import os
 class FFI:
 	libc = ffi.open('libc.so.6')
 
+	lchown = libc.func('i', 'lchown', 'sII')
+
 	IN_CREATE = 0x00000100
 	IN_DELETE = 0x00000200
 
@@ -79,6 +81,9 @@ def connect_hostapd_socket(interface):
 	local_address  = '/var/run/hapt-%s-%d' % (interface, time.time() % 86400)
 	sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
 	sock.bind(encode_socket_address(local_address))
+	# Make our local socket owned by the `network` group, so that hostapd (running as non-root) is allowed to send messages to it
+	# See: https://github.com/openwrt/openwrt/blob/master/package/network/services/hostapd/patches/610-hostapd_cli_ujail_permission.patch
+	FFI.lchown(local_address, 101, 101)
 	sock.connect(encode_socket_address(remote_address))
 	sock.send('ATTACH')
 	response = sock.recv(1024)
