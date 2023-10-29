@@ -269,8 +269,8 @@ class WirelessDevicesTracker:
 
 if __name__ == '__main__':
 	tracker = WirelessDevicesTracker()
-	signal.signal(signal.SIGINT, tracker.exit)
 
 	tracker.oneshot()
 	if len(sys.argv) > 1 and sys.argv[1] == '--monitor':
+		signal.signal(signal.SIGINT, tracker.exit)
 		tracker.monitor()
