@@ -1,5 +1,4 @@
-FROM openwrtorg/sdk
+FROM ghcr.io/openwrt/sdk
 
-COPY hapt /home/build/openwrt/package/hapt
-RUN make defconfig
-CMD make package/hapt/compile V=sc
+COPY hapt ./package/hapt
+CMD make defconfig && make package/hapt/compile V=sc
