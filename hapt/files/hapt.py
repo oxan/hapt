@@ -77,22 +77,22 @@ def get_connected_clients(interface):
 def connect_hostapd_socket(interface):
 	remote_address = '/var/run/hostapd/%s' % interface
 	local_address  = '/var/run/hapt-%s-%d' % (interface, time.time() % 86400)
-	socket = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-	socket.bind(encode_socket_address(local_address))
-	socket.connect(encode_socket_address(remote_address))
-	socket.send('ATTACH')
-	response = socket.recv(1024)
+	sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+	sock.bind(encode_socket_address(local_address))
+	sock.connect(encode_socket_address(remote_address))
+	sock.send('ATTACH')
+	response = sock.recv(1024)
 	if response != b'OK\n':
 		raise ValueError('Received invalid response on ATTACH from hostapd: %s' % response)
 
-	return socket
+	return sock
 
-def disconnect_hostapd_socket(socket):
-	socket.send('DETACH')
-	response = socket.recv(1024)
+def disconnect_hostapd_socket(sock):
+	sock.send('DETACH')
+	response = sock.recv(1024)
 	if response != b'OK\n':
 		raise ValueError('Received invalid response on DETACH from hostapd: %s' % response)
-	socket.close()
+	sock.close()
 
 def get_lease_details(leasefile, mac):
 	try:
@@ -121,10 +121,10 @@ class InterfaceWatcher:
 		if self.include_interfaces and interface not in self.include_interfaces:
 			return
 
-		socket = connect_hostapd_socket(interface)
+		sock = connect_hostapd_socket(interface)
 		print("Connected to hostapd on interface %s" % interface)
-		self.fds[socket.fileno()] = ('hostapd', interface, socket)
-		self.poll.register(socket.fileno(), select.POLLIN)
+		self.fds[sock.fileno()] = ('hostapd', interface, sock)
+		self.poll.register(sock.fileno(), select.POLLIN)
 
 	def remove_interface(self, interface):
 		for fd, desc in self.fds.items():
