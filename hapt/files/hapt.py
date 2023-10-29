@@ -258,14 +258,14 @@ class WirelessDevicesTracker:
 				self.on_connect(interface, mac)
 
 	def monitor(self):
-		watcher = InterfaceWatcher(self.handle_message, self.config.get('wifi_interfaces', None))
-		watcher.setup()
-		watcher.run()
-		watcher.teardown()
+		self.watcher = InterfaceWatcher(self.handle_message, self.config.get('wifi_interfaces', None))
+		self.watcher.setup()
+		self.watcher.run()
+		self.watcher.teardown()
 
 	def exit(self, signum):
-		# the signal will cause poll() to raise OSError(EINTR), which in turn returns from watcher.run()
-		pass
+		self.watcher.teardown()
+		sys.exit()
 
 if __name__ == '__main__':
 	tracker = WirelessDevicesTracker()
