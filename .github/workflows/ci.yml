@@ -1,0 +1,21 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build OpenWRT package
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build package
+        run: |
+          chmod 0777 build/bin/
+          ./makepkg.sh
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: build/bin/packages/**/*.ipk
