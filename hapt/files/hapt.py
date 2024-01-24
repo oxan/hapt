@@ -59,7 +59,11 @@ def ubus_call(path, method, message=None):
 		command = "ubus call %s %s '%s'" % (path, method, json.dumps(message))
 	else:
 		command = "ubus call %s %s" % (path, method)
-	return json.loads(subprocess(command))
+	response = subprocess(command)
+	try:
+		return json.loads(response)
+	except ValueError:
+		raise ValueError("Failed to parse response of command '%s' as JSON: '%s'" % (command, response))
 
 def curl_call(path, headers, payload):
 	# ussl borks on my SSL certificate
