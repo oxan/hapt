@@ -172,7 +172,8 @@ class InterfaceWatcher:
 		self.poll.register(self.inotify_fd, select.POLLIN)
 
 		for interface in listdir('/var/run/hostapd'):
-			self.add_interface(interface)
+			if interface != 'global':  # ignore the global control interface
+				self.add_interface(interface)
 
 	def run(self):
 		print("Monitoring for events...")
@@ -258,6 +259,8 @@ class WirelessDevicesTracker:
 		configured_interfaces = self.config.get('wifi_interfaces', None)
 		configured_macs = self.config.get('track_mac_address', None)
 		for interface in listdir('/var/run/hostapd'):
+			if interface == 'global':  # ignore the global control interface
+				continue
 			if configured_interfaces and interface not in configured_interfaces:
 				continue
 
