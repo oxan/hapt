@@ -7,11 +7,11 @@ import sys
 sys.path.append('/usr/lib/micropython/unix')
 
 import ffi
-import json
 import select
 import socket
 import struct
 import time
+import ujson as json  # use built-in module instead of the library module, which is buggy
 import urequests as requests  # not yet stripped of its u prefix in OpenWRT's micropython-lib version
 from unix import signal
 from unix import os
