@@ -12,6 +12,7 @@ define Package/hapt
 	SECTION  := net
 	CATEGORY := Network
 	TITLE    := Wireless device presence tracker integrated with Home Assistant
+	# Dependency is on micropython-lib-unix-src as it's a lot smaller than micropython-lib-unix, but both work.
 	DEPENDS  := +micropython +micropython-lib +micropython-lib-unix-src
 	PKGARCH  := all
 endef
