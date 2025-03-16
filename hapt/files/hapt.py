@@ -77,8 +77,13 @@ def get_config(config, section):
 	return next(iter(config['values'].values()))
 
 def get_connected_clients(interface):
-	response = ubus_call('hostapd.%s' % interface, 'get_clients')
-	return response['clients'].keys()
+	try:
+		response = ubus_call('hostapd.%s' % interface, 'get_clients')
+		return response['clients'].keys()
+	except ValueError as e:
+		# This can happen if the interface isn't fully up yet, it's fine to continue - we assume nothing is connected
+		print("Failed to get connected clients: %s" % e)
+		return []
 
 def connect_hostapd_socket(interface):
 	remote_address = '/var/run/hostapd/%s' % interface
