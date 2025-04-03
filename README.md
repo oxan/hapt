@@ -19,8 +19,9 @@ or running `opkg install <file>` from a shell.
 
 ### Configuration
 Once the package is installed, you must update the configuration in `/etc/config/hapt`. At minimum the `host` option
-should be set to the address of your Home Assistant installation, and the `token` option to a Home Assistant
-[long-lived access token][token] (these can be generated in the Home Assistant web interface).
+should be set to the URL of your Home Assistant installation (including the scheme, e.g. `http://homeassistant:8123`),
+and the `token` option to a Home Assistant [long-lived access token][token] (these can be generated in the Home
+Assistant web interface, on the Security page of your user profile).
 
 The `consider_home_connect` and `consider_home_disconnect` settings can be used to configure for how long (in seconds)
 after the first association and last disassociation event the device should be considered home. Since Home Assistant
@@ -54,4 +55,4 @@ This project has been inspired by the [openwrt_hass_devicetracker][hasstracker] 
 [homeassistant]: https://www.home-assistant.io/
 [hasstracker]: https://github.com/mueslo/openwrt_hass_devicetracker
 [releases]: https://github.com/oxan/hapt/releases
-[token]: https://www.home-assistant.io/docs/authentication/
+[token]: https://developers.home-assistant.io/docs/auth_api/#long-lived-access-token
